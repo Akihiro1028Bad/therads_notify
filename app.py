@@ -24,32 +24,33 @@ if not DISCORD_WEBHOOK_URL:
     raise ValueError('DISCORD_WEBHOOK_URL環境変数を設定してください。')
 
 
-def format_time(seconds):
-    """秒を時間と分に変換する関数"""
-    hours, remainder = divmod(seconds, 3600)
-    minutes, _ = divmod(remainder, 60)
-    return f"{hours}時間{minutes}分"
+def format_time(minutes):
+    """分を時間と分に変換する関数"""
+    hours, remaining_minutes = divmod(minutes, 60)
+    if hours > 0:
+        return f"{hours}時間{remaining_minutes}分"
+    else:
+        return f"{remaining_minutes}分"
 
-# メインの処理部分（例）
 @app.route('/receive_data', methods=['POST'])
 def receive_data():
     if request.is_json:
         data = request.get_json()
         app.logger.info(f'受信したデータ: {str(data)}')
         
-        if 'accounts' in data and isinstance(data['accounts'], list):
-            send_to_discord(data['accounts'])
+        if isinstance(data, dict) and all(isinstance(v, dict) for v in data.values()):
+            send_to_discord(data)
             return jsonify({"message": "データを正常に受信し、Discordに送信しました"}), 200
         else:
             app.logger.warning('受信したデータが期待される形式ではありません')
-            return jsonify({"error": "データは'accounts'キーを持つ必要があり、その値はリストである必要があります"}), 400
+            return jsonify({"error": "データは正しい形式である必要があります"}), 400
     else:
         app.logger.warning('受信したリクエストがJSONではありません')
         return jsonify({"error": "リクエストはJSON形式である必要があります"}), 400
     
 
 def send_to_discord(accounts_data):
-    """複数のアカウントデータをフォーマットしてDiscordに送信する関数"""
+    """アカウントデータをフォーマットしてDiscordに送信する関数"""
     # 日本時間で現在時刻を取得
     jst = timezone(timedelta(hours=9))
     current_time = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")
@@ -58,15 +59,16 @@ def send_to_discord(accounts_data):
     message = f":clock1: **通知時刻**: `{current_time} JST`\n"
     
     # 各アカウントのデータを追加
-    for account_data in accounts_data:
+    for account_name, account_data in accounts_data.items():
         formatted_time = format_time(account_data.get('elapsed_time', 0))
         message += f"""
-:bust_in_silhouette: **アカウント名**: `{account_data.get('account_name', 'N/A')}`
+:bust_in_silhouette: **アカウント名**: `{account_name}`
 :stopwatch: **経過時間**: `{formatted_time}`
-:eye: **インプレッション**: `{account_data.get('impressions', 0):,}`
-:arrow_upper_right: **増加数**: `{account_data.get('increase_since_last', 0):,}`
-:heart: **いいね数**: `{account_data.get('likes', 0):,}`
-:speech_balloon: **コメント数**: `{account_data.get('comments', 0):,}`
+:eye: **インプレッション**: `{account_data.get('impression_count', 0):,}`
+:arrow_upper_right: **増加数**: `{account_data.get('increase_from_last_time', 0):,}`
+:heart: **いいね数**: `{account_data.get('like_count', 0):,}`
+:speech_balloon: **コメント数**: `{account_data.get('comment_count', 0):,}`
+:link: **投稿URL**: {account_data.get('post_url', 'N/A')}
 
 ---
 """
@@ -81,15 +83,6 @@ def send_to_discord(accounts_data):
     except requests.exceptions.RequestException as e:
         app.logger.error(f'Discordへの送信に失敗しました。エラー: {str(e)}')
         raise
-
-def format_time(seconds):
-    """秒を時間と分に変換する関数"""
-    hours, remainder = divmod(seconds, 3600)
-    minutes, _ = divmod(remainder, 60)
-    if hours > 0:
-        return f"{hours}時間{minutes}分"
-    else:
-        return f"{minutes}分"
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
